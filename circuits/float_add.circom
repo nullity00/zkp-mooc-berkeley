@@ -73,6 +73,7 @@ template Num2Bits(b) {
     for (var i = 0; i < b; i++) {
         sum_of_bits += (2 ** i) * bits[i];
     }
+    // log("sum_of_bits: ", sum_of_bits, " in: ", in, "eq", sum_of_bits == in);
     sum_of_bits === in;
 }
 
@@ -300,11 +301,59 @@ template LeftShift(shift_bound) {
  * If `skip_checks` = 1, then we don't care about the output and the non-zero constraint is not enforced.
  */
 template MSNZB(b) {
+    assert(b < 254);
     signal input in;
     signal input skip_checks;
     signal output one_hot[b];
 
-    // TODO
+    component iz = IsZero();
+    iz.in <== in;
+
+    component if_else1 = IfThenElse();
+    if_else1.cond <== skip_checks;
+    if_else1.L <== 0;
+    if_else1.R <== iz.out;
+    if_else1.out === 0;
+
+    component if_else2 = IfThenElse();
+    if_else2.cond <== skip_checks;
+    if_else2.L <== 1;
+    if_else2.R <== in;
+
+    // log("b value", b);
+    component n2b = Num2Bits(b);
+    n2b.in <== if_else2.out;
+    var count = 0;
+
+    signal power_2[b];
+    signal power_21[b];
+    signal lt[b];
+    signal gt[b];
+
+    component and[b];
+    signal sum;
+
+    for (var i = 0 ; i < b; i++) {
+        power_2[i] <== 2**i;
+        power_21[i] <== 2**(i+1);
+        lt[i] <-- power_2[i] <= in;
+        gt[i] <-- power_21[i] > in;
+
+        and[i] = AND();
+        and[i].a <== lt[i];
+        and[i].b <== gt[i];
+
+        one_hot[i] <== and[i].out;
+    }
+    
+    var lc = 0;
+
+    for (var i = 0; i < b; i++) {
+        lc += one_hot[i];
+    }
+
+    sum <== lc;
+    sum === 1 - skip_checks;
 }
 
 /*
@@ -322,7 +371,30 @@ template Normalize(k, p, P) {
     signal output m_out;
     assert(P > p);
 
-    // TODO
+    component is_zero = IsZero();
+    is_zero.in <== m;
+
+    component if_else = IfThenElse();
+    if_else.cond <== skip_checks;
+    if_else.L <== 1;
+    if_else.R <== is_zero.out;
+    if_else.out === 1 * skip_checks;
+
+    component msnzb = MSNZB( P + 1 );
+    msnzb.in <== m;
+    msnzb.skip_checks <== skip_checks;
+
+    var msb = 0;
+    for (var i = 0; i < P + 1; i++) {
+        msb = msnzb.one_hot[i] == 1 ? i : msb;
+    }
+
+    signal bit_diff <-- P - msb;
+    signal bit_diff_e <-- msb - p;
+
+    m_out <-- m << bit_diff;
+    e_out <-- e + bit_diff_e;
+
 }
 
 /*
@@ -337,6 +409,64 @@ template FloatAdd(k, p) {
     signal input m[2];
     signal output e_out;
     signal output m_out;
+
+    component cwf1 = CheckWellFormedness(k, p);
+    cwf1.e <== e[0];
+    cwf1.m <== m[0];
+
+    component cwf2 = CheckWellFormedness(k, p);
+    cwf2.e <== e[1];
+    cwf2.m <== m[1];
+
+    signal x <-- (e[0] << (p + 1)) ;
+    signal y <-- (e[1] << (p + 1)) ;
+
+    signal mag1 <== x + m[0];
+    signal mag2 <== y + m[1];
+
+    signal dif <-- mag1 > mag2;
+
+    signal alpha_e <-- dif ? e[0] : e[1];
+    signal beta_e <-- dif ? e[1] : e[0];
+
+    signal alpha_m <-- dif ? m[0] : m[1];
+    signal beta_m <-- dif ? m[1] : m[0];
+
+    signal diff <-- alpha_e - beta_e;
+
+    signal greater_than <-- diff > (p + 1) ? 1 : 0;
+
+    // log("alpha_e", alpha_e, "beta_e", beta_e, "diff", diff, "greater_than", greater_than, "p+1", p+1);
+
+    signal cond <-- alpha_e == 0 || greater_than;
+    
+    signal alpha_m2 <-- alpha_m << diff;
+    signal m2 <-- alpha_m2 + beta_m;
+
+    // log("alpha_m2", alpha_m2, "m2", m2);
+
+    // log("cond", cond);
+
+    component normalize = Normalize(k, p, 2*p + 1);
+    normalize.m <== m2;
+    normalize.e <== beta_e;
+    
+    normalize.skip_checks <== cond;
+
+    // log("normalize.e_out", normalize.e_out, "normalize.m_out", normalize.m_out);
+
+    component round = RoundAndCheck(k, p, 2*p + 1);
+
+    signal round_e <-- cond ? 1 : normalize.e_out ;
+    signal round_m <-- cond ? 1 : normalize.m_out ;
+
+    round.e <== round_e;
+    round.m <== round_m;
+
+    e_out <-- cond ? alpha_e : round.e_out;
+    m_out <-- cond ? alpha_m : round.m_out;
+
+    // log("e_out", e_out, "m_out", m_out);
 
     // TODO
 }
