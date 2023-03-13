@@ -320,7 +320,6 @@ template MSNZB(b) {
     if_else2.L <== 1;
     if_else2.R <== in;
 
-    // log("b value", b);
     component n2b = Num2Bits(b);
     n2b.in <== if_else2.out;
     var count = 0;
@@ -436,24 +435,16 @@ template FloatAdd(k, p) {
 
     signal greater_than <-- diff > (p + 1) ? 1 : 0;
 
-    // log("alpha_e", alpha_e, "beta_e", beta_e, "diff", diff, "greater_than", greater_than, "p+1", p+1);
-
     signal cond <-- alpha_e == 0 || greater_than;
     
     signal alpha_m2 <-- alpha_m << diff;
     signal m2 <-- alpha_m2 + beta_m;
-
-    // log("alpha_m2", alpha_m2, "m2", m2);
-
-    // log("cond", cond);
 
     component normalize = Normalize(k, p, 2*p + 1);
     normalize.m <== m2;
     normalize.e <== beta_e;
     
     normalize.skip_checks <== cond;
-
-    // log("normalize.e_out", normalize.e_out, "normalize.m_out", normalize.m_out);
 
     component round = RoundAndCheck(k, p, 2*p + 1);
 
@@ -465,8 +456,4 @@ template FloatAdd(k, p) {
 
     e_out <-- cond ? alpha_e : round.e_out;
     m_out <-- cond ? alpha_m : round.m_out;
-
-    // log("e_out", e_out, "m_out", m_out);
-
-    // TODO
 }
