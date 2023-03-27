@@ -407,29 +407,18 @@ template Normalize(k, p, P) {
     signal output m_out;
     assert(P > p);
 
-    component is_zero = IsZero();
-    is_zero.in <== m;
-
-    component if_else = IfThenElse();
-    if_else.cond <== skip_checks;
-    if_else.L <== 1;
-    if_else.R <== is_zero.out;
-    if_else.out === 1 * skip_checks;
-
     component msnzb = MSNZB( P + 1 );
     msnzb.in <== m;
     msnzb.skip_checks <== skip_checks;
 
-    var msb = 0;
+    var ell, l;
     for (var i = 0; i < P + 1; i++) {
-        msb = msnzb.one_hot[i] == 1 ? i : msb;
+        ell += msnzb.one_hot[i] * i;
+        l += msnzb.one_hot[i] * (1 << (P - i));
     }
 
-    signal bit_diff <-- P - msb;
-    signal bit_diff_e <-- msb - p;
-
-    m_out <-- m << bit_diff;
-    e_out <-- e + bit_diff_e;
+    m_out <== m * l;
+    e_out <== e + ell - p;
 
 }
 
