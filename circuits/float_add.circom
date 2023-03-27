@@ -208,16 +208,21 @@ template CheckWellFormedness(k, p) {
  */
 template RightShift(b, shift) {
     assert(shift < b);
-    assert(b < 254);
+
     signal input x;
     signal output y;
 
-    y <-- x >> shift;
-    component n2b = Num2Bits(b);
-    n2b.in <== x;
-    component b2n = Bits2Num(b);
-    b2n.bits <== n2b.bits;
-    x === b2n.out;
+    component x_bits = Num2Bits(b);
+    x_bits.in <== x;
+
+    signal y_bits[ b - shift ];
+    for (var i = 0; i < b - shift; i++) {
+        y_bits[i] <== x_bits.bits[i + shift];
+    }
+
+    component y_num = Bits2Num(b - shift);
+    y_num.bits <== y_bits;
+    y <== y_num.out;
 }
 
 /*
