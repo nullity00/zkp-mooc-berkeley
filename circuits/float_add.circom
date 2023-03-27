@@ -149,13 +149,11 @@ template CheckBitLength(b) {
     signal output out;
 
     signal bits[b];
+    var sum_of_bits = 0;
 
     for (var i = 0; i < b; i++) {
         bits[i] <-- (in >> i) & 1;
         bits[i] * (1 - bits[i]) === 0;
-    }
-    var sum_of_bits = 0;
-    for (var i = 0; i < b; i++) {
         sum_of_bits += (2 ** i) * bits[i];
     }
 
