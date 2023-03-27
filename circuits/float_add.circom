@@ -73,8 +73,23 @@ template Num2Bits(b) {
     for (var i = 0; i < b; i++) {
         sum_of_bits += (2 ** i) * bits[i];
     }
-    // log("sum_of_bits: ", sum_of_bits, " in: ", in, "eq", sum_of_bits == in);
+
     sum_of_bits === in;
+}
+
+template Num2BitsWIthSkipChecks(b) {
+    signal input in;
+    signal output bits[b];
+    signal input skip_checks;
+
+    var sum_of_bits = 0;
+    for (var i = 0; i < b; i++) {
+        bits[i] <-- (in >> i) & 1;
+        bits[i] * (1 - bits[i]) === 0;
+        sum_of_bits += (2 ** i) * bits[i];
+    }
+    
+    (sum_of_bits - in) * (1 - skip_checks) === 0;
 }
 
 /*
@@ -271,6 +286,15 @@ template RoundAndCheck(k, p, P) {
     m_out <== if_else[1].out;
 }
 
+function log2(b){
+    var n = 1, r = 1;
+    while (n < b) {
+        n *= 2;
+        r++;
+    }
+    return r;
+}
+
 /*
  * Left-shifts `x` by `shift` bits to output `y`.
  * Enforces 0 <= `shift` < `shift_bound`.
@@ -282,18 +306,38 @@ template LeftShift(shift_bound) {
     signal input skip_checks;
     signal output y;
 
-    y <-- x << shift;
+    var n = log2(shift_bound);
+
+    component shift_bits = Num2BitsWIthSkipChecks(n);
+    shift_bits.in <== shift;
+    shift_bits.skip_checks <== skip_checks;
 
     component lt = LessThan(shift_bound);
     lt.in[0] <== shift;
     lt.in[1] <== shift_bound;
+    (lt.out - 1) * (1 - skip_checks) === 0;
+
+    var pow_shift = 1;
+    component muxes[n];
+    log(n);
+
+    for (var i = 0; i < n; i++) {
+        muxes[i] = IfThenElse();
+        muxes[i].cond <== shift_bits.bits[i];
+        muxes[i].L <== pow_shift * (2 ** (2 ** i));
+        muxes[i].R <== pow_shift;
+        pow_shift = muxes[i].out;
+        log(pow_shift, i, shift_bits.bits[i]);
+    }
 
     component if_else = IfThenElse();
     if_else.cond <== skip_checks;
-    if_else.L <== 1;
-    if_else.R <== lt.out;
-    if_else.out === 1;
+    if_else.L <== 0;
+    if_else.R <== pow_shift;
+    pow_shift = if_else.out;
 
+    y <== x * pow_shift;
+    log(y);
 }
 
 /*
@@ -309,53 +353,43 @@ template MSNZB(b) {
     signal input skip_checks;
     signal output one_hot[b];
 
-    component iz = IsZero();
-    iz.in <== in;
-
-    component if_else1 = IfThenElse();
-    if_else1.cond <== skip_checks;
-    if_else1.L <== 0;
-    if_else1.R <== iz.out;
-    if_else1.out === 0;
-
-    component if_else2 = IfThenElse();
-    if_else2.cond <== skip_checks;
-    if_else2.L <== 1;
-    if_else2.R <== in;
-
-    component n2b = Num2Bits(b);
-    n2b.in <== if_else2.out;
-    var count = 0;
-
-    signal power_2[b];
-    signal power_21[b];
-    signal lt[b];
-    signal gt[b];
-
-    component and[b];
-    signal sum;
-
     for (var i = 0 ; i < b; i++) {
-        power_2[i] <== 2**i;
-        power_21[i] <== 2**(i+1);
-        lt[i] <-- power_2[i] <= in;
-        gt[i] <-- power_21[i] > in;
-
-        and[i] = AND();
-        and[i].a <== lt[i];
-        and[i].b <== gt[i];
-
-        one_hot[i] <== and[i].out;
+        var temp;
+        if (((1 << i) <= in) && (in < (1 << (i+1)))) {
+            temp = 1;
+        } else {
+            temp = 0;
+        }
+        one_hot[i] <-- temp;
     }
-    
-    var lc = 0;
+
+    var lc;
 
     for (var i = 0; i < b; i++) {
+        one_hot[i] * (1 - one_hot[i]) === 0;
         lc += one_hot[i];
     }
 
-    sum <== lc;
-    sum === 1 - skip_checks;
+    (lc - 1) * (1 - skip_checks) === 0;
+
+    var pow2 = 0;
+    var pow21 = 0;
+
+    for (var i = 0; i < b; i++) {
+        pow2 += one_hot[i] * (1 << i);
+        pow21 += one_hot[i] * (1 << (i+1));
+    }
+
+    component lt1 = LessThan(b+1);
+    lt1.in[0] <== in;
+    lt1.in[1] <== pow21;
+    ( lt1.out - 1 ) * (1 - skip_checks) === 0;
+
+    component lt2 = LessThan(b+1);
+    lt2.in[0] <== pow2 - 1;
+    lt2.in[1] <== in;
+    ( lt2.out - 1 ) * (1 - skip_checks) === 0;
+
 }
 
 /*
