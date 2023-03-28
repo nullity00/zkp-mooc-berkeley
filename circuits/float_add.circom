@@ -315,11 +315,10 @@ template LeftShift(shift_bound) {
     component lt = LessThan(shift_bound);
     lt.in[0] <== shift;
     lt.in[1] <== shift_bound;
-    (lt.out - 1) * (1 - skip_checks) === 0;
+    (1 - lt.out) * (1 - skip_checks) === 0;
 
     var pow_shift = 1;
     component muxes[n];
-    log(n);
 
     for (var i = 0; i < n; i++) {
         muxes[i] = IfThenElse();
@@ -327,7 +326,6 @@ template LeftShift(shift_bound) {
         muxes[i].L <== pow_shift * (2 ** (2 ** i));
         muxes[i].R <== pow_shift;
         pow_shift = muxes[i].out;
-        log(pow_shift, i, shift_bits.bits[i]);
     }
 
     component if_else = IfThenElse();
@@ -337,7 +335,6 @@ template LeftShift(shift_bound) {
     pow_shift = if_else.out;
 
     y <== x * pow_shift;
-    log(y);
 }
 
 /*
@@ -443,42 +440,62 @@ template FloatAdd(k, p) {
     cwf2.e <== e[1];
     cwf2.m <== m[1];
 
-    signal x <-- (e[0] << (p + 1)) ;
-    signal y <-- (e[1] << (p + 1)) ;
+    signal mag1 <== (e[0] * (1 << (p + 1))) + m[0];
+    signal mag2 <== (e[1] * (1 << (p + 1))) + m[1];
 
-    signal mag1 <== x + m[0];
-    signal mag2 <== y + m[1];
+    component lt = LessThan(k + p + 2);
+    lt.in[0] <== mag2;
+    lt.in[1] <== mag1;
 
-    signal dif <-- mag1 > mag2;
+    var input1[2] = [e[0], m[0]];
+    var input2[2] = [e[1], m[1]];
 
-    signal alpha_e <-- dif ? e[0] : e[1];
-    signal beta_e <-- dif ? e[1] : e[0];
+    component switcher[2];
 
-    signal alpha_m <-- dif ? m[0] : m[1];
-    signal beta_m <-- dif ? m[1] : m[0];
+    for (var i = 0; i < 2; i++) {
+        switcher[i] = Switcher();
+        switcher[i].L <== input1[i];
+        switcher[i].R <== input2[i];
+        switcher[i].sel <== lt.out;
+    }
 
+    signal alpha_e <== switcher[0].outR;
+    signal beta_e <== switcher[0].outL;
+
+    signal alpha_m <== switcher[1].outR;
+    signal beta_m <== switcher[1].outL;
     signal diff <-- alpha_e - beta_e;
 
-    signal greater_than <-- diff > (p + 1) ? 1 : 0;
+    component lt1 = LessThan(k);
+    lt1.in[0] <== (p+1);
+    lt1.in[1] <== diff;
 
-    signal cond <-- alpha_e == 0 || greater_than;
+    signal greater_than <== lt1.out;
+
+    component iz = IsZero();
+    iz.in <== alpha_e;
+
+    component or = OR();
+    or.a <== iz.out;
+    or.b <== greater_than;
+    signal cond <== or.out;
+
+    component lshift = LeftShift(p + 2);
+    lshift.x <== alpha_m;
+    lshift.shift <== diff;
+    lshift.skip_checks <== cond;
     
-    signal alpha_m2 <-- alpha_m << diff;
-    signal m2 <-- alpha_m2 + beta_m;
+    signal alpha_m2 <== lshift.y ;
+    signal m2 <== alpha_m2 + beta_m;
 
     component normalize = Normalize(k, p, 2*p + 1);
     normalize.m <== m2;
     normalize.e <== beta_e;
-    
     normalize.skip_checks <== cond;
 
     component round = RoundAndCheck(k, p, 2*p + 1);
-
-    signal round_e <-- cond ? 1 : normalize.e_out ;
-    signal round_m <-- cond ? 1 : normalize.m_out ;
-
-    round.e <== round_e;
-    round.m <== round_m;
+    round.e <== normalize.e_out;
+    round.m <== normalize.m_out;
 
     e_out <-- cond ? alpha_e : round.e_out;
     m_out <-- cond ? alpha_m : round.m_out;
