@@ -1,5 +1,7 @@
 # Assignment: Writing and Proving Arithmetic Circuits
 
+# Refer to the questions [here](https://github.com/rdi-berkeley/zkp-mooc-lab)
+
 In this assignment you’ll learn about:
 * `circom`: a domain-specific language for describing arithmetic circuits, and
 * `snarkjs`: a tool for generating and verifying zk-SNARKs for circuit satisfiability.
